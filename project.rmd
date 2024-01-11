@@ -1,0 +1,424 @@
+---
+title: "Precipitation Patterns across 8 Major Cities"
+author: "Jahnavi Chowdhary Mattaparti"
+date: "12/15/2021"
+output: html_document
+---
+
+```{r, include=FALSE}
+library(tidyverse)
+library(lubridate)
+library(scales)
+library(kableExtra)
+```
+
+```{r, include=FALSE}
+weather=read.csv("weather_raw.csv")
+
+weather=weather%>%
+  rename(station = STATION,
+         name = NAME,
+         date = DATE,
+         snow = SNOW,
+         prcp = PRCP)%>%
+  #shorten the expression of location to its city name
+  mutate(name = recode(name,
+                       `ATLANTA HARTSFIELD JACKSON INTERNATIONAL AIRPORT, GA US` = "Atlanta",
+                       `CHICAGO MIDWAY AIRPORT 3 SW, IL US` = "Chicago",
+                       `DENVER CENTRAL PARK, CO US` = "Denver",
+                       `HOUSTON WILLIAM P HOBBY AIRPORT, TX US` = "Houston",
+                       `LOS ANGELES DOWNTOWN USC, CA US` = "Los Angeles",
+                       `MIAMI BEACH, FL US` = "Miami",
+                       `NY CITY CENTRAL PARK, NY US` = "New York",
+                       `SEATTLE PORTAGE BAY, WA US` = "Seattle_1",
+                       `SEATTLE SAND POINT WEATHER FORECAST OFFICE, WA US` = "Seattle_2"
+                       ))%>%
+  # delete the columns where there are no value for these variables
+  select(station, name, date, snow, prcp)%>%
+  # separate the date column
+  mutate(year = year(date),
+         month = month(date,label = TRUE),
+         day=day(date))%>%
+  filter(year!=2021)%>%
+  # rearrange the columns
+  select(station,name,date,year,month,day,everything())
+
+wea_sea1 = weather%>%filter(name == "Seattle_1")
+wea_sea2 = weather%>%filter(name == "Seattle_2")
+date_without_sea1 = wea_sea2%>%
+  anti_join(wea_sea1,by=c("date" = "date"))
+wea2 = bind_rows(wea_sea1,date_without_sea1)%>%
+  mutate(name = recode(name,
+                       `Seattle_1` = "Seattle",
+                       `Seattle_2` = "Seattle"))
+wea2
+
+# data for cities without Seattle
+wea1 = weather%>%
+  filter(name %in% c("Atlanta","Chicago","Denver","Houston","Los Angeles","Miami","New York"))
+
+# combine two datasets
+weather= bind_rows(wea1,wea2)
+
+w1=weather%>%
+  select(station, name, date, prcp)%>%
+  filter(prcp!=0)%>%
+  group_by(station)%>%
+  mutate(index=seq(0,n()-1))
+w2=weather%>%
+  select(station, name, date, prcp)%>%
+  filter(prcp!=0)%>%
+  group_by(station)%>%
+  mutate(index=seq(1,n()))
+w3=full_join(w1,w2,by=c("station", "name", "index"))%>%
+  mutate(n_days=day(as.period(interval(date.y, date.x))))%>%
+  select(station, date.x, n_days)%>%
+  rename(date=date.x)
+  
+weather=left_join(weather,w3,by=c("station", "date"))%>%
+  drop_na(prcp)%>%
+  mutate(
+    season = case_when(
+      month =="Mar"|month=="Apr"|month=="May" ~ "Spring",
+      month =="Jun"|month=="Jul"|month=="Aug" ~ "Summer",
+      month =="Sep"|month=="Oct"|month=="Nov" ~ "Fall",
+      month =="Dec"|month=="Jan"|month=="Feb" ~ "Winter"
+    ))%>%
+  filter(year>=1940)
+rm(w1,w2,w3,wea_sea1,wea_sea2, wea1, wea2, date_without_sea1)
+```
+
+
+## Introduction ##
+The United States is a large country, spanning many different ecosystems, from deserts to rainforests. The amount of precipitation these places get varies, but by how much? In order to answer this question, we have collected data from 8 large cities across the US in order to examine the differences in their precipitation.The 8 cities chosen for analysis are Seattle, Chicago, New York, Miami, Atlanta, Houston, Denver, Los Angeles. We are looking to find patterns in the frequency of precipitation as well as the amount of precipitation each location receives.
+
+The main questions of our analysis are:
+
+What patterns exist for monthly precipitation in each city and are they significant?
+
+Which cities receive more or less precipitation and is the difference significant?
+
+What patterns exist in snowfall for the cities?
+
+**Thesis Statement**: We believe that there is a very significant difference between the precipitation in cities across the United States and that each city also experiences significant differences within its precipitation during the year.
+
+## Background ##
+The data being used comes from NOAA (National Oceanic and Atmospheric Administration), an official source for weather and climate data. The data spans from January of 1930 to December of 2020, the last full year of data. The data for each city comes from the weather station with the most complete record for that period of time. There are two inconsistencies in the data: the data from Denver only goes back to 1940, and the data from Seattle comes from two separate stations with some amount of overlap. In order to solve this, we will only be using the data from 1940-2020, and we combined the data from the two seattle stations to create one continuous set of data. The data is a record of precipitation, and contains data on both the type of precipitation as well as the amount. In our study we also expanded the data frame to include the frequency, measured in days since the last precipitation (a 1 means that it rained the previous day).
+
+```{r, echo = FALSE, message=FALSE, include=FALSE}
+weather_variables = tibble(
+  Name = c("Station", "Name", "Date", "PRCP", "SNOW", "n_days"),
+  Description = c("The official station code",
+                  "The english name of the station",
+                  "The date (yyyy-mm-dd format)",
+                  "Precipitation (inches)",
+                  "Snowfall (inches)",
+                  "The number of days since the last precipitation"))
+
+weather_variables %>% 
+  kable(caption = "Key Variables from the Weather Data")%>%
+  kable_styling(position = "left", full_width = FALSE,
+                bootstrap_options = c("striped", "condensed"))
+
+```
+
+## Analysis ##
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+weather%>%
+  filter(n_days!=0)%>%
+  group_by(name)%>%
+  summarize(mean=mean(n_days), min=min(n_days), lower=quantile(n_days, .25), median=median(n_days), upper=quantile(n_days, .75), max=max(n_days))%>%
+  arrange(mean)%>%
+  kable(caption="Summary of the n_days Variable")%>%
+  kable_styling(position = "left", full_width = FALSE,
+                bootstrap_options = c("striped", "condensed"))
+```
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+weather%>%
+  filter(n_days!=0)%>%
+  ggplot(aes(x=name, y=n_days))+
+  geom_boxplot(outlier.shape=NA)+
+  ylim(0, 20)+
+  ylab("Frequency of Precipitation (days)")+
+  xlab("City")+
+  ggtitle("Precipitation Frequency Distribution by City")
+```
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+weather%>%
+  filter(n_days!=0)%>%
+  ggplot(aes(x=n_days))+
+  geom_histogram()+
+  xlab("Frequency of Precipitation (days)")+
+  ggtitle("Precipitation Frequency Distribution by City")+
+  facet_wrap(~name)
+```
+
+
+
+```{r, echo=FALSE, message=FALSE}
+weather%>%
+  mutate(month=fct_relevel(month, "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"))%>%
+  filter(n_days!=0)%>%
+  group_by(name, month)%>%
+  summarize(n_days=mean(n_days))%>%
+  ggplot(aes(x=month,y=n_days)) +
+  geom_col(aes(fill=month)) +
+  facet_wrap(~name) + 
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())+
+  xlab("Month")+
+  ylab("Mean Days Between Precipitation") + 
+  ggtitle("Precipitation Frequencies by Month")
+```
+
+
+
+```{r, echo=FALSE, message=FALSE}
+weather%>%
+  filter(prcp!=0)%>%
+  group_by(name)%>%
+  summarize(mean=mean(prcp), min=min(prcp), lower=quantile(prcp, .25), median=median(prcp), upper=quantile(prcp, .75), max=max(prcp))%>%
+  arrange(desc(mean))%>%
+  kable(caption="Summary of the PRCP variable")%>%
+  kable_styling(position = "left", full_width = FALSE,
+                bootstrap_options = c("striped", "condensed"))
+```
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+rankings=tibble(
+  Station = c("Seattle", "Chicago", "New York", "Miami", "Atlanta", "Houston", "Denver", "Los Angeles"),
+  Frequency = c(1,2,3,4,5,6,7,8),
+  Quantity = c(7,6,5,3,2,1,8,4))
+kable(rankings, caption="Rankings for Frequency and Quantity of Precipitation by City")%>%
+  kable_styling(position = "left", full_width = FALSE,
+                bootstrap_options = c("striped", "condensed"))
+```
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+weather%>%
+  filter(prcp!=0)%>%
+  ggplot(aes(x=name, y=prcp))+
+  geom_boxplot(outlier.shape=NA)+
+  ylim(0,2)+
+  ylab("Quantity of Precipitation (inches)")+
+  xlab("City")+
+  ggtitle("Distribution of Precipitation by City")
+```
+
+```{r, echo=FALSE, message=FALSE}
+weather%>%
+  mutate(month=fct_relevel(month, "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"))%>%
+  ggplot(aes(x=month,y=prcp)) +
+  geom_col(aes(fill=month)) +
+  facet_wrap(~name) + 
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())+
+  xlab("Month")+
+  ylab("Precipitation") + 
+  ggtitle("Total Precipitation By Month")
+```
+
+
+```{r, echo=FALSE, message=FALSE}
+snow=weather%>%
+  drop_na(snow)%>%
+  filter(name%in%c("New York", "Denver", "Chicago"))
+
+snow%>%
+  group_by(name, year)%>%
+  summarize(snow=sum(snow))%>%
+  ungroup()%>%
+  group_by(name)%>%
+  summarize(snow=mean(snow))%>%
+  arrange(desc(snow))%>%
+  kable(caption="Mean Annual Snowfall by City")%>%
+  kable_styling(position = "left", full_width = FALSE,
+                bootstrap_options = c("striped", "condensed"))
+```
+
+
+
+```{r, echo=FALSE, message=FALSE}
+snow=snow%>%
+  mutate(WT=case_when(snow!=0 ~ "Snow", T ~ "Rain"))
+ggplot(snow, aes(x=month, y=prcp, fill=WT))+
+  geom_col()+
+   ylab("Quantity of Precipitation") + 
+   theme(axis.text.x = element_text(angle=90,hjust=1,size=8))+
+  guides(fill = guide_legend(title = "Snowfall Distribution"))+
+  ggtitle("Precipitation Composition")+
+  facet_wrap(~name)
+```
+
+## Hypothesis Testing ##
+
+The first hypothesis test we will do is based on the n_days variable for the frequency of precipitation in each city. The mean of the full set of data we collected was 3.166, so we will test each city against the assumption that it has a mean equal to 3.166.
+
+$H_0: \mu = 3.166$
+
+$H_a: \mu \neq 3.166$
+
+$T = \frac{\bar{X} - \mu}{s / \sqrt{n}} \sim t(n-1)$
+
+$\bar{X}$: The mean value of n_days for each city
+
+$\mu$: 3.166, the assumed population mean
+
+$s$: the standard deviation of n_days for each city
+
+$n$: the number of observations for each city
+
+```{r, echo=FALSE, message=FALSE}
+mu=weather%>%
+  filter(n_days!=0)%>%
+  summarize(mean=mean(n_days))%>%
+  pull(mean)
+weather%>%
+  filter(n_days!=0)%>%
+  group_by(name)%>%
+  summarize(x_bar=mean(n_days), s=sd(n_days),n=n(),t_stat=(x_bar-mu)/(s/sqrt(n)), p_value=2*pt(-abs(t_stat), n-1))%>%
+  arrange(t_stat)%>%
+  kable(caption="Hypothesis Testing for Mean Frequency")%>%
+  kable_styling(position = "left", full_width = FALSE,
+                bootstrap_options = c("striped", "condensed"))
+```
+
+
+
+Next we will perform a similar test for the PRCP variable. We will test each city's mean precipitation against the mean of all of our samples: 0.103.
+
+$H_0: \mu = 0.103$
+
+$H_a: \mu \neq 0.103$
+
+$T = \frac{\bar{X} - \mu}{s / \sqrt{n}} \sim t(n-1)$
+
+$\bar{X}$: The mean value of PRCP for each city
+
+$\mu$: 0.103, the assumed population mean
+
+$s$: the standard deviation of PRCP for each city
+
+$n$: the number of observations for each city
+
+```{r, echo=FALSE, message=FALSE}
+mu=weather%>%
+  summarize(mean=mean(prcp))%>%
+  pull(mean)
+weather%>%
+  group_by(name)%>%
+  summarize(x_bar=mean(prcp), s=sd(prcp),n=n(),t_stat=(x_bar-mu)/(s/sqrt(n)), p_value=2*pt(-abs(t_stat), n-1))%>%
+  arrange(t_stat)%>%
+  kable(caption="Hypothesis Testing for Mean Quantity")%>%
+  kable_styling(position = "left", full_width = FALSE,
+                bootstrap_options = c("striped", "condensed"))
+```
+
+
+Finally, we will test the difference between winter and summer precipitation in each city. In order to do this, we will use a two-sample t-test.
+
+$H_0: \mu_1 = \mu_2$
+
+$H_a: \mu_1 \neq \mu_2$
+
+$t = \frac{\bar{X_1} - \bar{X_2}}{\sqrt{\frac{s_1^2}{n_1} + \frac{s_2^2}{n_2}}}\sim t(n_1+n_2-2)$
+
+$\mu_1$: The true mean summer precipitation
+
+$\mu_2$: The true mean winter precipitation
+
+$\bar{X_1}$: The sample mean for the summer
+
+$\bar{X_2}$: The sample mean for the winter
+
+$s_1$: The sample standard deviation for the summer
+
+$s_2$: The sample standard deviation for the winter
+
+$n_1$: The number of summer observations
+
+$n_2$: The number of winter observations
+
+```{r, echo=FALSE, message=FALSE}
+summer=weather%>%
+  filter(season=="Summer")%>%
+  group_by(name)%>%
+  summarize(x_bar=mean(prcp), s=sd(prcp), n=n())
+
+winter=weather%>%
+  filter(season=="Winter")%>%
+  group_by(name)%>%
+  summarize(x_bar=mean(prcp), s=sd(prcp), n=n())
+
+full_join(summer, winter, by="name", suffix=c("_summer", "_winter"))%>%
+  mutate(t_stat=(x_bar_summer-x_bar_winter)/sqrt((s_summer^2/n_summer)+(s_winter^2/n_winter)), p_value=2*pt(-abs(t_stat), n_summer+n_winter-2))%>%
+  arrange(t_stat)%>%
+  kable(caption="Hypothesis Testing for Seasonal Difference")%>%
+  kable_styling(position = "left", full_width = FALSE,
+                bootstrap_options = c("striped", "condensed"))
+```
+
+
+## Discussion ##
+
+**Discussion of Frequency**
+
+From the table summary and boxplot, we can make some conclusions about the frequency of precipitation in these cities. First, the distribution is very heavily skewed to the left. All the cities have a median of either 1 or 2, despite having maximum values of 29 or 30. The skew can also be seen in the distance from the median of the lower and upper quartiles. The lower quartile is equal to 1 for all the cities, while the upper quartile values range from 2-8, which implies that the values are much more spread out above the median than below. Looking at the mean days between precipitation for the cities, we can see that they have a fairly large range. The most frequent rain comes from Seattle at only 2.3 days between rain on average, while the sparsest rainfall comes from Los Angeles at 5.7 days. This is the difference between raining three times a week and only once, which is significant.
+The bar graph for frequency offers a few other interesting observations. Only days with a nonzero precipitation value have a value for the n_days variable. This means that when looking at the histogram, the number of observations is equal to the number of days it rained in the city. When looking at Los Angeles, it seems like there is almost no data compared to Seattle, which has very tall bars. This is because Los Angeles has so many fewer precipitation observations than Seattle.
+The other thing to notice is that the three cities with the most frequent rain, Seattle, Chicago, and New York, are the three most northern cities of the eight. The next three cities, Miami, Atlanta, and Houston are all close to the Gulf coast. These regional differences are interesting to notice but is beyond the scope of our study to fully analyze.
+The monthly precipitation graph shows us some patterns that each city might experience in a year. Seattle and Los Angeles both have a large bump in the middle of the graph, representing very infrequent rain during the summer months. Denver and Miami experience the opposite effect. They both have a dip in the middle, representing more frequent precipitation in the summer than in the winter. The other cities have relatively constant precipitation frequency for the entire year, with New York and Chicago having the most level curves. The other interesting thing to notice is that Seattle and Los Angeles, the cities with the most frequent and least frequent precipitation respectively, both have the same shaped graphs. This means that even though they have very different frequencies from each other, they experience the same monthly patterns.
+
+**Discussion of Quantity**
+
+The quantity of rainfall is also very heavily skewed but is a little more readable than the frequency data because it contains values that can differ by .01, as opposed to the frequency values which only contained whole numbers. The table is arranged by the mean value, but you can see that the medians are not in descending order. This means that some of the cities have high outliers that affect their mean more than other cities. This is apparent between the first two cities. Houston has a median of 0.19, and Atlanta has a median of 0.21, but Houston’s max value was 12.07, while Atlanta’s max was only 6.68.
+Perhaps the most difference between the quantity and frequency was the order the cities were in. When looking at the quantity of precipitation, it seemed that the frequency was completely unrelated. Seattle, which had the most frequent precipitation, had the 7th most total precipitation. The opposite was true for Houston, which went from 6th most frequent precipitation to 1st in total precipitation.
+The monthly graph for precipitation again showed very interesting patterns. We could see again that Seattle and Los Angeles received very little precipitation during the summer and that Denver and Miami received Increased precipitation during the summer. Atlanta and Houston had a little more movement than on the frequency graph but are still constant and lack much of a pattern. The most interesting difference is between New York and Chicago. On the Frequency graph, both New York and Chicago had very level curves. On the quantity graph, New York’s curve remains the most level, but Chicago’s graph suddenly has a bump in the middle. This is very interesting because that means that even though Chicago receives precipitation at very regular intervals, during the summer months the amount of rain increases.
+One more interesting observation is that the patterns we saw on the frequency graph all still exist on the quantity graph. It may seem obvious that the patterns would stay, but we just got done looking at how different the total rainfall data is for each city. The fact that even though the frequency and quantity data vary so greatly, the monthly patterns for the data remain similar.
+
+**Discussion of Snow**
+
+Snow was kind of a corollary to our analysis. We only ended up having a good set of snow data from three of the cities, but we decided to look for any patterns we could find. Denver ended up having the most snowfall per year by almost double what New York and Chicago had. This was very interesting because Denver was last in total precipitation, which included snowfall. In the graph, you could again see just how little precipitation Denver had compared to New York and Chicago, but you can also see why it had the most snowfall. Each bar on the graph represented the total precipitation for that month. The red section represented all the rain, while the blue section represented the total snow. In the middle of winter, snowfall only accounted for about half of the precipitation in New York and Chicago, compared to Denver, which had almost 100% snow. The other difference was how many months received snow. New York received snow for 7 months of the year, and Chicago received snow for 8 months of the year. Denver had snow data for an amazing 10 months of the year. With all these factors put together, it becomes clear how the city with the least amount of precipitation somehow doubles the other cities in total snowfall.
+The other interesting thing to notice is the shape of the three graphs. Denver and Chicago both receive more precipitation in the Summer than the winter. New York is steady, but it does look like it may be the same case. Something we thought coming into the study was that when there is snow on the ground, less of it will evaporate into the sky to become clouds to fall back down again. Judging by these three graphs, it looks like there may be some truth to the statement, but unfortunately the data was too incomplete to confirm it.
+
+**Discussion of Hypothesis Tests**
+
+The first hypothesis test we performed was on the frequency of precipitation for each city and whether it was significantly different than our assumed population mean. The only cities that ended up not being significant at the 99% level were Miami and Atlanta. Because we have so many observations, the value of n was very high, making the standard error very low. This means that any small deviations from the mean were very likely significant. Our conclusion from this test is that Miami and Atlanta receive rainfall at a frequency that is the average for the United States, while the other cities all receive either less or more frequent rain, which can be seen based on their t-statistic.
+The second hypothesis test was based off the same ideas as the first, but instead looked at the total precipitation in the cities. From this test, we could see that all the cities had a significant difference at the 99% confidence level, except for Chicago. Our conclusion from this test is that Chicago receives total precipitation this year equal to the average amount for the United States, while the other cities receive either more or less.
+The last hypothesis test was by far the most interesting. This time we tested each cities precipitation during the summer against its precipitation during the winter. The only City that didn’t have a significant difference was Atlanta. There are a lot more things we can learn from this hypothesis test though. First, it shows that New York has significantly less precipitation in the winter than in the summer, which supports the hypothesis we alluded to earlier. Second, we can see that the cities that have t-statistics close to each other have similar weather patterns, regardless of how much or how frequent precipitation they get. For example, Seattle and Los Angeles have the lowest t-statistic, which means that they both receive more precipitation in the winter than in the summer. The same is true on the other end for Miami and Denver. Essentially, this hypothesis test has confirmed mathematically the patterns we have been seeing the whole time.
+
+**Future Options for Analysis**
+
+-This study can be extended to other cities across the United States and correlate with regions of the country as well.
+
+-This study can be done with snowfall by considering the cities with major snowfall.
+
+**Potential Shortcomings**
+
+There are several shortcomings with our analysis. Here we list a few of them:
+
+•	Our data only pertains to certain cities, to get an extremely detailed analysis of how the precipitation has varied and we needed to take a more exhaustive data set.
+
+•	Denver is a major snowfall city hence its precipitation data was not as consistent as it was for the other cities in the analysis.
+
+
+
+## References ##
+
+https://www.ncdc.noaa.gov/cdo-web/datatools/findstation
+
+The data used for the entire analysis report had been taken from this site.
